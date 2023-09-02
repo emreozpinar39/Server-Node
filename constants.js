@@ -6,7 +6,7 @@ constants={
     SERVER_ERROR: 500,
 };
 
-//refresh Token lerin tutulacağı bir dizi oluşturuldu
+//Array created for refresh tokens
 const refreshTokens = [];
 
 module.exports = {constants,refreshTokens}
