@@ -1,19 +1,20 @@
 const asyncHandler = require("express-async-handler");
+const jwt = require("jsonwebtoken");
 const db = require("../config/db");
 const { text } = require("express");
 const bcrypt = require("bcrypt");
-
+const {refreshTokens} = require("../constants");
 
 //@desc get all user
 //@route GET /user/all
-//@access public
+//@access private
 const getUsers = asyncHandler(async (req,res) => {
     const text = "SELECT * FROM users ORDER BY id ASC";
     const {rows} = await db.query(text);
     if(!rows.length){
         return res.status(200).json({message:'There is no user in database!'})
     }
-    return res.status(200).json(rows);
+    return res.status(200).json({rows,payload:req.tokenPayload});
 });
 
 //@desc get user by id
@@ -84,4 +85,87 @@ const deleteUser = asyncHandler(async (req,res) => {
     console.log(rows);
     return res.status(200).json({deletedUser:rows[0]});
 });
-module.exports = {getUsers,getUser,createUser,updateUser,deleteUser}
+
+//@desc Authenticate user
+//@route POST /user/login
+//@access public
+const loginUser = asyncHandler(async (req,res) => {
+    const {email,password}=req.body;
+    if(!email || !password){
+        res.status(400);
+        throw new Error("Email and password fields are mandatory!");
+    }
+    
+    const text = "select * from users where email = $1";
+    const values = [email];
+    const {rows} = await db.query(text,values);    
+
+    if(!rows.length || email !== rows[0].email || !(await bcrypt.compare(password,rows[0].password))){
+        res.status(401);
+        throw new Error("Invalid Email or Password!");
+    }
+
+    //AccessToken Token Created.
+    const accessToken = jwt.sign(
+        {email:email,username:rows[0].username},
+        process.env.ACCESS_TOKEN_SECRET,
+        {expiresIn: '1m'}
+    );
+
+    //RefreshToken Token Created.
+    const refreshToken = jwt.sign(
+        {email:email,username:rows[0].username},
+        process.env.REFRESH_TOKEN_SECRET
+    );
+
+    refreshTokens.push(refreshToken);
+    return res.status(200).json({accessToken,refreshToken});
+});
+
+//@desc Refresh user Token
+//@route POST /user/refresh
+//@access public
+const refreshToken = asyncHandler(async (req,res) => {
+    const {refreshToken} = req.body;
+    if(!refreshToken) {
+        res.status(401);
+        throw new Error("Refresh Token Is Necessary!")
+    } 
+    
+    if(!refreshTokens.includes(refreshToken)){
+        res.status(401);
+        throw new Error("Refresh Token Is Invalid!")
+    } 
+
+    jwt.verify(refreshToken,process.env.REFRESH_TOKEN_SECRET,(err,data)=>{
+
+        //Access Token Created.
+        const accessToken = jwt.sign(
+        {email:data.email,username:data.username},
+        process.env.ACCESS_TOKEN_SECRET,
+        {expiresIn: '30s'}
+        );
+
+        return res.status(200).json({accessToken})
+    });
+});
+
+//@desc logout user
+//@route POST /user/logout
+//@access public
+const logoutUser = asyncHandler(async (req,res) => {
+    const index = refreshTokens.indexOf(req.body.refreshToken);
+    refreshTokens.splice(index,1);
+    return res.status(200).json("User Logout!");
+})
+
+module.exports = {
+    getUsers,
+    getUser,
+    createUser,
+    updateUser,
+    deleteUser,
+    loginUser,
+    refreshToken,
+    logoutUser
+}
