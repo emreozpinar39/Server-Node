@@ -1,6 +1,7 @@
 const asyncHandler = require("express-async-handler");
 const db = require("../config/db");
 const { text } = require("express");
+const bcrypt = require("bcrypt");
 
 
 //@desc get all user
@@ -34,11 +35,20 @@ const getUser =  asyncHandler(async (req,res) => {
 //@route post /user/add
 //@access public
 const createUser = asyncHandler(async (req,res) => {
+    const {email,password,username} = req.body;
+    if(!username || !email || !password){
+        res.status(400);
+        throw new Error("All fields are mandatory!")
+    }
+    
+    //Hash password
+    const hashedPassword = await bcrypt.hash(password,10);
+
     const createdDate = new Date().toLocaleString('en-GB', {hour12: false,});
-    const text = "insert into users (email,password,username,createddate) values ($1,$2,$3,$4 ) returning *";
-    const values = [req.body.email,req.body.password,req.body.username,createdDate];
+    const text = "insert into users (email,password,username,createddate,updatedDate) values ($1,$2,$3,$4,$5) returning *";
+    const values = [email,hashedPassword,username,createdDate,createdDate];
     const {rows} = await db.query(text,values);
-    return res.status(201).json({createdUser: rows[0] });    
+    return res.status(201).json({"_id":rows[0].id,"email":rows[0].email,"username":rows[0].username});    
 });
 
 //@desc update user by id
@@ -46,9 +56,10 @@ const createUser = asyncHandler(async (req,res) => {
 //@access public
 const updateUser = asyncHandler(async (req,res) => {
 
-    const {id} = req.params;    
-    const text = "update users set email = $1, username = $2 where id = $3 RETURNING *";
-    const values = [req.body.email,req.body.username,id];
+    const {id} = req.params;        
+    const updatedDate = new Date().toLocaleString('en-GB', {hour12: false,});
+    const text = "update users set email = $1, username = $2, updatedDate = $3 where id = $4 RETURNING *";
+    const values = [req.body.email,req.body.username,updatedDate,id];
     const {rows} = await db.query(text,values);
     if(!rows.length){
         res.status(404);
